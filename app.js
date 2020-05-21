@@ -8,6 +8,7 @@ const session = require('express-session');
 const passport = require('passport');
 const passportLocalMongoose = require("passport-local-mongoose");
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const FacebookStrategy = require('passport-facebook').Strategy;
 const findOrCreate = require('mongoose-findorcreate');
 
 const app = express();
@@ -28,19 +29,23 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-
-
-mongoose.connect("mongodb://localhost:27017/userDB", {
+const uri = process.env.ATLAS_URI;
+mongoose.connect(uri, {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
+    useCreateIndex: true
 });
 
-mongoose.set("useCreateIndex", true);
+const connection = mongoose.connection;
+connection.once('open', () => {
+    console.log("MongoDB database connection established successfully");
+})
 
 const userSchema = new mongoose.Schema({
     email: String,
     password: String,
     googleId: String,
+    facebookId: String,
     secret: String
 });
 
@@ -64,8 +69,8 @@ passport.deserializeUser(function (id, done) {
 
 
 passport.use(new GoogleStrategy({
-        clientID: process.env.CLIENT_ID,
-        clientSecret: process.env.CLIENT_SECRET,
+        clientID: process.env.CLIENT_ID_GOOGLE,
+        clientSecret: process.env.CLIENT_SECRET_GOOGLE,
         callbackURL: "http://localhost:3000/auth/google/secrets"
     },
     function (accessToken, refreshToken, profile, cb) {
@@ -78,7 +83,19 @@ passport.use(new GoogleStrategy({
     }
 ));
 
-
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_APP_ID,
+    clientSecret: process.env.FACEBOOK_APP_SECRET,
+    callbackURL: "http://localhost:3000/auth/facebook/secrets"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    User.findOrCreate({
+         facebookId: profile.id 
+        }, function (err, user) {
+           return cb(err, user);
+    });
+  }
+));
 
 
 
@@ -101,6 +118,21 @@ app.get('/auth/google/secrets',
         // Successful authentication, redirect home.
         res.redirect('/secrets');
     });
+
+
+app.get('/auth/facebook',
+    passport.authenticate('facebook'));
+
+app.get('/auth/facebook/secrets',
+    passport.authenticate('facebook', {
+        failureRedirect: '/login'
+    }),
+    function (req, res) {
+        // Successful authentication, redirect home.
+        res.redirect('/secrets');
+    });
+
+
 
 app.get("/login", function (req, res) {
     res.render("login");
@@ -177,7 +209,8 @@ app.post("/register", function (req, res) {
 
         } else {
             passport.authenticate("local")(req, res, function () {
-                res.redirect("/secrets");
+
+                res.redirect("/");
             })
         }
 
@@ -205,8 +238,5 @@ app.post("/login", function (req, res) {
 });
 
 
-
-app.listen(3000, function () {
-    console.log("Server started on port 3000");
-
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
