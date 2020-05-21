@@ -42,7 +42,7 @@ connection.once('open', () => {
 })
 
 const userSchema = new mongoose.Schema({
-    email: String,
+    username: String,
     password: String,
     googleId: String,
     facebookId: String,
@@ -72,11 +72,13 @@ passport.use(new GoogleStrategy({
         clientID: process.env.CLIENT_ID_GOOGLE,
         clientSecret: process.env.CLIENT_SECRET_GOOGLE,
         callbackURL: "http://localhost:3000/auth/google/secrets"
+
     },
     function (accessToken, refreshToken, profile, cb) {
 
         User.findOrCreate({
-            googleId: profile.id
+            googleId: profile.id,
+            username: profile.emails[0].value
         }, function (err, user) {
             return cb(err, user);
         });
@@ -86,11 +88,13 @@ passport.use(new GoogleStrategy({
 passport.use(new FacebookStrategy({
     clientID: process.env.FACEBOOK_APP_ID,
     clientSecret: process.env.FACEBOOK_APP_SECRET,
-    callbackURL: "http://localhost:3000/auth/facebook/secrets"
+    callbackURL: "http://localhost:3000/auth/facebook/secrets",
+    profileFields: ['id', 'emails', 'name']
   },
   function(accessToken, refreshToken, profile, cb) {
     User.findOrCreate({
-         facebookId: profile.id 
+         facebookId: profile.id,
+         username: profile.emails[0].value
         }, function (err, user) {
            return cb(err, user);
     });
@@ -107,8 +111,13 @@ app.get("/", function (req, res) {
 
 app.get('/auth/google',
     passport.authenticate('google', {
-        scope: ['profile']
-    }));
+        scope: [
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/userinfo.email'
+        ]
+    }), function (req, res) {
+        res.redirect('/');
+    });
 
 app.get('/auth/google/secrets',
     passport.authenticate('google', {
@@ -121,7 +130,10 @@ app.get('/auth/google/secrets',
 
 
 app.get('/auth/facebook',
-    passport.authenticate('facebook'));
+    passport.authenticate('facebook', { scope : ['email']}),
+    function(req, res){
+        res.redirect('/');
+    });
 
 app.get('/auth/facebook/secrets',
     passport.authenticate('facebook', {
@@ -200,9 +212,7 @@ app.post("/submit", function (req, res) {
 
 app.post("/register", function (req, res) {
 
-    User.register({
-        username: req.body.username
-    }, req.body.password, function (err) {
+    User.register({username: req.body.username}, req.body.password, function (err) {
         if (err) {
             console.log(err);
             res.redirect("/register");
@@ -224,6 +234,8 @@ app.post("/login", function (req, res) {
         username: req.body.username,
         password: req.body.password
     });
+    console.log(user);
+    
 
     req.login(user, function (err) {
         if (err) {
